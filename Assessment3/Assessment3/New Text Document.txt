@@ -1,0 +1,374 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
+
+#include <GL/gl3w.h>
+
+#include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+#include <vector>
+
+using namespace std;
+
+class vec3
+{
+public:
+	float x, y, z;
+
+	vec3() {}
+	vec3(float l, float m, float r)
+	{
+		x = l;
+		y = m;
+		z = r;
+	}
+	~vec3() {}
+};
+
+class vec2
+{
+public:
+	float x, y;
+
+	vec2() {}
+	vec2(float l, float r)
+	{ 
+		x = l;
+		y = r;
+	}
+	~vec2() {}
+};
+
+struct vertex
+{
+public:
+	vec3 vc;
+	vec3 tc;
+	vec3 nc;
+
+	vertex() {}
+	vertex(vec3 vc_in, vec3 tc_in, vec3 nc_in)
+	{
+		vc = vc_in;
+		tc = tc_in;
+		nc = nc_in;
+	}
+	~vertex() {}
+};
+struct triangle
+{
+public:
+	vertex verts[3];
+
+	triangle() {}
+	triangle(vertex v0, vertex v1, vertex v2)
+	{
+		verts[0] = v0;
+		verts[1] = v1;
+		verts[2] = v2;
+	}
+	~triangle() {}
+};
+
+class Material
+{
+public:
+	char mtl_name[256];
+	char fil_name[256];
+
+	Material() {}
+	Material(char* n, char* f) 
+	{
+		strcpy(mtl_name, n); 
+		strcpy(fil_name, f);
+	}
+	~Material() 
+	{
+	}
+};
+
+class Object
+{
+public:
+	unsigned int VAO;
+	unsigned int VBO;
+	vector<triangle> tris;
+	Material mtl;
+	GLuint texture;
+
+
+	Object() {}
+	Object(Material m)
+	{
+		strcpy(mtl.fil_name, m.fil_name);
+		strcpy(mtl.mtl_name, m.mtl_name);
+	}
+	~Object()
+	{
+	}
+};
+
+int mtl_parse(char* filename, vector<Material>* mtls)
+{
+	FILE* fptr;
+	
+	// Open a file in read mode
+	fptr = fopen(filename, "r");
+	std::vector<Material> mats;
+	char reader[256];
+	char *buffer;
+	char* holder;
+	char mtlbuffer[256];
+	char mapbuffer[256];
+	int count = 0;
+
+
+
+	if (fptr == NULL) {
+		fprintf(stderr, filename);
+	}
+
+	while (fgets(reader, 256, fptr)) {
+	
+		char str1[256];
+		int index = 0;
+
+		//checks for indentation
+		while (reader[index] == ' ' || reader[index] == '\t') {
+			index++;
+		}
+
+		//stores directory in a string to concatenate to map_kd and generate a filename
+		int  slash = NULL;
+
+		for (int i = 0; filename[i] != '\0'; i++) {
+			str1[i] = filename[i];
+			if (filename[i] == '/') {
+				slash = i;
+			}
+
+		}
+		str1[slash + 1] = 0;
+	
+		char* token;
+
+		//set index to ignore indentation
+		buffer = reader + index;
+		// Get the first token
+		token = strtok(buffer, " ");
+
+	
+		//checks token and reads info accordingly
+		if (strcmp(token, "newmtl")== 0) {
+			holder = buffer + 7;
+			holder[strlen(holder)- 1] = 0;
+			strncpy(mtlbuffer, holder, 256);
+		
+			count++;
+		}
+		else if (strcmp(token, "map_Kd")== 0) {
+
+			holder = buffer + 7;
+			strcat(str1, holder);
+			for (int i = 0; str1[i] != '\0'; i++) {
+				if (str1[i] == '\n') {
+					str1[i] = '\0';
+				}
+			}
+			strncpy(mapbuffer, str1, 256);
+			mapbuffer[255] = 0;
+			count++;
+		}
+			
+		// pushes a material object if map_kd and newmtl is stored
+		if (count >= 2) {
+			mats.push_back(Material(mtlbuffer, mapbuffer));
+			printf("%s,%s\n", mtlbuffer, mapbuffer);
+			count = 0;
+		}
+	}
+
+	//uses output pointer
+	*mtls = mats;
+	// Close the file
+	fclose(fptr);
+
+	//success
+	return 1;
+}
+
+
+int obj_parse(const char* filename, vector<Object>* objs)
+{
+	vector<Material> materials;
+	vector<vec3> vecs;
+	vector<vec3> norms;
+	vector<vec3> uvs;
+	FILE* fptr;
+	char str1[256];
+	char* mtl = NULL;
+	
+
+
+
+	// Open a file in read mode
+	fptr = fopen(filename, "r");
+
+	char buffer[256];
+
+	//output pointer objs points to this when finished
+	std::vector<Object> objects;
+
+	// loops through the whole file and stores each line in buffer
+	while (fgets(buffer, 256, fptr)) {
+
+		char str1[256];
+		char cpy[256];
+
+		//stores directory in a string to concatenate to mtl and generate a filename to call mtl_parse on
+		int  slash = NULL;
+	
+		for (int i = 0; filename[i] != '\0'; i++) {
+			str1[i] = filename[i];
+			if (filename[i] == '/') {
+				slash = i;
+			}
+			
+		}
+		str1[slash + 1] = 0;
+
+		// copy of buffer
+		strncpy(cpy, buffer, 256);
+		cpy[255] = 0;
+
+
+		char delimiter[] = " ";
+
+		// Declare empty string to store token
+		char* token;
+
+		// Get the first token
+		token = strtok(cpy, delimiter);
+
+		
+
+		if (strcmp(token, "mtllib") == 0) {
+			// gets vector of materials
+			mtl = buffer + 7;
+			strcat(str1, mtl);
+			for (int i = 0; str1[i] != '\0'; i++) {
+				if (str1[i] == '\n') {
+					str1[i] = '\0';
+				}
+			}
+		
+		
+			mtl_parse(str1, &materials);
+		}
+		else if (strcmp(token, "v") == 0) {
+			//stores a vec3 for vc
+			char* tokenx, *tokeny, *tokenz;
+			token = strtok(NULL, delimiter);
+			tokenx = token;
+		
+			token = strtok(NULL, delimiter);
+			tokeny = token;
+			
+
+			token = strtok(NULL, delimiter);
+			tokenz = token;
+
+			vecs.push_back(vec3(atof(tokenx), atof(tokeny), atof(tokenz)));
+			
+		}else if (strcmp(token, "vt") == 0) {
+
+			//stores a pseudo vec3 for tcs
+			char* tokenx, * tokeny;
+			token = strtok(NULL, delimiter);
+			tokenx = token;
+
+
+			token = strtok(NULL, delimiter);
+			tokeny = token;
+
+	
+			//tokeny is negative to account for the texture flip
+			uvs.push_back(vec3(atof(tokenx), -atof(tokeny), 0.f));
+
+		}
+		else if (strcmp(token, "vn") == 0) {
+			//stores a vec3 for vc
+			char* tokenx, * tokeny, * tokenz;
+			token = strtok(NULL, delimiter);
+			tokenx = token;
+
+			token = strtok(NULL, delimiter);
+			tokeny = token;
+
+
+			token = strtok(NULL, delimiter);
+			tokenz = token;
+
+			norms.push_back(vec3(atof(tokenx), atof(tokeny), atof(tokenz)));
+
+		}
+		
+		else if (strcmp(token, "f") == 0) {
+			//puts triangles into current object
+			int num1, num2, num3 ;
+			int VCs[3], TCs[3], NCs[3];
+			vertex vertices[3];
+
+			// Loop through the string and extract numbers
+			int numRead;
+			char* ptr = buffer + 1;
+
+			for (int i = 0; i < 3; i++) {
+				sscanf(ptr, " %d/%d/%d %n", &num1, &num2, &num3, &numRead);
+
+				VCs[i] = num1;
+				TCs[i] = num2;
+				NCs[i] = num3;
+
+				ptr += numRead;
+			}
+
+
+			for (int i = 0; i < 3; i++) {
+		
+				vertices[i].vc = vecs[VCs[i] - 1];
+				vertices[i].tc = uvs[TCs[i] - 1];
+				vertices[i].nc = norms[NCs[i] - 1];
+				
+			}
+
+			
+			objects.back().tris.push_back(triangle(vertices[0], vertices[1], vertices[2]));
+			
+		}
+		else if (strcmp(token, "usemtl") == 0) {
+			//creates an object with the material described and puts it in the vector
+			mtl = buffer + 7;
+			mtl[strlen(mtl) - 1] = 0;
+	
+			for (int i = 0; i < materials.size(); i++) {
+				if (strcmp(mtl, materials[i].mtl_name) == 0)
+				{
+					objects.push_back(Object(materials[i]));
+				}
+			}	
+	
+		}	
+	
+	}
+
+	*objs = objects;
+
+	//success
+	return 1;
+}
+
