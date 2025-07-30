@@ -7,3 +7,12 @@
 build/
 bin/
 .DS_Store
+*.o
+*.obj
+*.exe
+*.dll
+*.log
+*.vs
+build/
+bin/
+.DS_Store
